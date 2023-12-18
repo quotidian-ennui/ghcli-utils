@@ -6,8 +6,8 @@ GH_ACCEPT="Accept: application/vnd.github+json"
 export GH_PAGER="cat"
 
 function pr_search() {
-  # shellcheck disable=SC2016
   queryString="repo:$1 is:open is:pr review-requested:@me archived:false"
+  # shellcheck disable=SC2016
   query='query ($searchQuery: String!, $endCursor: String) {
           search(query: $searchQuery, after: $endCursor, type: ISSUE, first: 50) {
             edges {
@@ -59,7 +59,6 @@ REPO=$1 || true
 
 if [[ -z "$REPO" ]]; then
   usage
-  exit 1
 fi
 
 me=$(gh config get user -h github.com)
