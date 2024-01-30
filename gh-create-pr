@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+function template_file() {
+  top=$(git rev-parse --show-toplevel)
+  self="$(dirname "$0")/.github"
+  pr_template=$(find "$top" -type f -iname "PULL_REQUEST_TEMPLATE.md" | head -n 1)
+  pr_template=${pr_template:-"$self/pull_request_template.md"}
+  echo "$pr_template"
+}
+
+gh pr create --body-file "$(template_file)" "$@"
