@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+top=$(git rev-parse --show-toplevel)
+base="$(basename "$top")"
+gh extension remove $base || true
+(cd $top && gh extension install .)
