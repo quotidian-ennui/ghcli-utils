@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+#
+set -eo pipefail
+
+GH_REST_API_VERSION="X-GitHub-Api-Version: 2022-11-28"
+GH_ACCEPT="Accept: application/vnd.github+json"
+export GH_PAGER="cat"
+POLL_INTERVAL_SECS=${GH_POLL_INTERVAL_SECS:-30}
+
+gh_api() {
+  gh api -H "$GH_REST_API_VERSION" -H "$GH_ACCEPT" "$@"
+}
+
+usage() {
+  cat <<EOF
+
+Usage: gh-merge-train [pr_number...]
+
+This is a fake merge train that rebases, approves, and squash-merges each argument
+
+In effect it takes some toil out of your life because we end up with this:
+
+gh-merge-train 25 26 27
+for PR in 25 26 27 do
+  // retry if failure, so pay attention, because a conflict will mean an infinite loop
+  gh pr update-branch PR --rebase
+  while in_progress do
+    gh pr checks PR --json "state,name" | jq -c ".[]" etc.
+  done
+  if success then
+    gh pr review --approve $i
+    gh squash-merge $i --use-default-msg
+  fi
+done
+
+EOF
+  exit 1
+}
+
+__bot_squash_merge_param() {
+  local pr_number=$1
+  local is_bot="false"
+  is_bot=$(gh pr view "$pr_number" --json "author" --jq ".author.is_bot")
+  if [[ "$is_bot" == "true" ]]; then
+    echo "--use-default-msg"
+  else
+    echo ""
+  fi
+}
+
+__check_status() {
+  local pr_number=$1
+  local successCount=0
+  local inProgressCount=0
+  local failureCount=0
+  local lineCount=0
+  local status
+
+  buildStatusJson=$(gh pr checks "$pr_number" --json "name,state" | jq -c '.[]')
+  if [[ -n "$buildStatusJson" ]]; then
+    while IFS= read -r line; do
+      ((lineCount++))
+      status="$(echo "$line" | jq -r '.state')"
+      case "$status" in
+      IN_PROGRESS | PENDING)
+        ((inProgressCount++))
+        ;;
+      SUCCESS)
+        ((successCount++))
+        ;;
+      *)
+        ((failureCount++))
+        ;;
+      esac
+    done <<<"$buildStatusJson"
+    if [[ "$successCount" == "$lineCount" ]]; then
+      echo "SUCCESSFUL"
+    elif [[ $failureCount -gt 0 ]]; then
+      echo "FAILED"
+    else
+      echo "IN_PROGRESS"
+    fi
+  else
+    echo "No Checks in progress?"
+  fi
+}
+
+__wait_for_checks() {
+  local pr_number="$1"
+  local buildStatus="IN_PROGRESS"
+  while [[ "$buildStatus" == "IN_PROGRESS" ]]; do
+    buildStatus="$(__check_status "$pr_number")"
+    if [[ "$buildStatus" == "IN_PROGRESS" ]]; then
+      echo "🔎 ...$pr_number still has checks; waiting for ${POLL_INTERVAL_SECS}s"
+      sleep "$POLL_INTERVAL_SECS"
+    fi
+  done
+  if [[ "$buildStatus" != "SUCCESSFUL" ]]; then
+    echo "$pr_number builds: $buildStatus"
+    exit 1
+  fi
+}
+
+__approve_then_merge() {
+  local pr_number="$1"
+  if ! gh pr review --approve "$pr_number" ; then
+    echo "⚠️ Failed to approve, this might not matter. If it does then gh squash-merge should break..."
+  fi
+  gh squash-merge "$pr_number" $(__bot_squash_merge_param "$pr_number")
+}
+
+__do_rebase() {
+  local pr_number="$1"
+  gh pr update-branch "$pr_number" --rebase
+}
+
+__rebase() {
+  local pr_number="$1"
+  while ! gh pr update-branch "$pr_number" --rebase; do
+    echo "Rebase failed. Retrying in $POLL_INTERVAL_SECS seconds..."
+    sleep "$POLL_INTERVAL_SECS"
+  done
+}
+
+{
+  if [[ "$#" -eq 0 ]]; then
+    usage
+    exit 1
+  fi
+  for pr in "$@"; do
+    echo "ℹ️ Working on $(gh pr view "$pr" --json "url" | jq -r '.url')"
+    __rebase "$pr"
+    __wait_for_checks "$pr"
+    __approve_then_merge "$pr"
+  done
+}

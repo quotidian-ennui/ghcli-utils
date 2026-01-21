@@ -6,7 +6,7 @@ GH_ACCEPT="Accept: application/vnd.github+json"
 export GH_PAGER="cat"
 
 usage() {
-  cat << EOF
+  cat <<EOF
 
 Usage: gh-wf-pr-approval
 
@@ -15,7 +15,7 @@ on all your public repos.
 
 
 EOF
- exit 1
+  exit 1
 }
 
 function gh_api() {
@@ -23,10 +23,10 @@ function gh_api() {
 }
 
 while getopts 'h' flag; do
-    case "${flag}" in
-    h) usage ;;
-    *) usage ;;
-    esac
+  case "${flag}" in
+  h) usage ;;
+  *) usage ;;
+  esac
 done
 
 me=$(gh config get user -h github.com)
