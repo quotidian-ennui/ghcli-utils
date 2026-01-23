@@ -130,6 +130,8 @@ __rebase() {
   for pr in "$@"; do
     echo "ℹ️ Working on $(gh pr view "$pr" --json "url" | jq -r '.url')"
     __rebase "$pr"
+    # sad but sometimes the checks don't start quick enough
+    sleep "$POLL_INTERVAL_SECS"
     __wait_for_checks "$pr"
     __approve_then_merge "$pr"
   done
