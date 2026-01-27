@@ -62,7 +62,7 @@ __check_status() {
   if [[ -n "$buildStatusJson" ]]; then
     while IFS= read -r line; do
       lineCount=$((lineCount + 1))
-			status="$(echo "$line" | jq -r '.state')"
+      status="$(echo "$line" | jq -r '.state')"
       case "$status" in
       IN_PROGRESS | PENDING)
         inProgressCount=$((inProgressCount + 1))
@@ -105,67 +105,67 @@ __wait_for_checks() {
 
 __approve_if_not_author() {
   local pr_number="$1"
-	local pr_author=""
-	local me=""
+  local pr_author=""
+  local me=""
 
-	me=$(gh_whoami)
-	pr_author="$(gh pr view "$pr" --json "author" | jq -r '.author.login')"
-	echo "ℹ️ PR Authored by $pr_author"
-	if [[ "$me" != "$pr_author" ]]; then
-		if ! gh pr review --approve "$pr_number" ; then
-			echo "⚠️ Failed to approve, this might not matter. If it does then gh squash-merge should break..."
-		fi
-	else
-		echo "👀 Not going to try and approve your own PR!"
-	fi
+  me=$(gh_whoami)
+  pr_author="$(gh pr view "$pr" --json "author" | jq -r '.author.login')"
+  echo "ℹ️ PR Authored by $pr_author"
+  if [[ "$me" != "$pr_author" ]]; then
+    if ! gh pr review --approve "$pr_number"; then
+      echo "⚠️ Failed to approve, this might not matter. If it does then gh squash-merge should break..."
+    fi
+  else
+    echo "👀 Not going to try and approve your own PR!"
+  fi
 }
 
 __approve_then_merge() {
   local pr_number="$1"
-	__approve_if_not_author "$pr_number"
+  __approve_if_not_author "$pr_number"
   gh squash-merge "$pr_number" $(__bot_squash_merge_param "$pr_number")
 }
 
 __update_branch() {
   local pr_number="$1"
-	local updateCount=0
-	local update_args=()
+  local updateCount=0
+  local update_args=()
 
-	if [[ "$GH_MERGE_TRAIN_REBASE" == "true" ]]; then
-	  update_args+=("--rebase")
-	fi
+  if [[ "$GH_MERGE_TRAIN_REBASE" == "true" ]]; then
+    update_args+=("--rebase")
+  fi
 
-	echo "ℹ️ Update branch using gh pr update-branch $pr_number ${update_args[@]}"
+  echo "ℹ️ Update branch using gh pr update-branch $pr_number ${update_args[@]}"
   while ! gh pr update-branch "$pr_number" "${update_args[@]}"; do
-		updateCount=$((updateCount + 1))
+    updateCount=$((updateCount + 1))
     if [[ "$updateCount" -ge "$GH_MERGE_TRAIN_MAX_ATTEMPTS" ]]; then
       echo -e "\n🚫 Branch update failed too many times"
       exit 1
-		else
-			echo "Update failed. Retrying in $POLL_INTERVAL_SECS seconds..."
-			sleep "$POLL_INTERVAL_SECS"
+    else
+      echo "Update failed. Retrying in $POLL_INTERVAL_SECS seconds..."
+      sleep "$POLL_INTERVAL_SECS"
     fi
   done
 }
 
 {
-	ARGS=$(getopt --options 'm' --longoptions 'merge' -- "${@}")
-	eval "set -- ${ARGS}"
-	while true; do
-		case "${1}" in
-		--merge | -m)
-			GH_MERGE_TRAIN_REBASE="false"
-			shift
-			;;
-		--)
-			shift
-			break
-			;;
-		*)
-			usage
-			;;
-		esac
-	done
+  ARGS=$(getopt --options 'm' --longoptions 'merge' -- "${@}")
+  eval "set -- ${ARGS}"
+  while true; do
+    case "${1}" in
+    --merge | -m)
+      GH_MERGE_TRAIN_REBASE="false"
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      usage
+      ;;
+    esac
+  done
   if [[ "$#" -eq 0 ]]; then
     usage
   fi

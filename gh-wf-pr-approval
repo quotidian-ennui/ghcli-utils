@@ -19,7 +19,6 @@ EOF
   exit 1
 }
 
-
 while getopts 'h' flag; do
   case "${flag}" in
   h) usage ;;
