@@ -8,7 +8,7 @@ gh_api() {
 }
 
 compressQuery() {
-  echo "$1" | tr -s ' ' | tr -d '\n'
+  printf '%s' "$1" | tr -d '\n'
 }
 
 # Because I often just use GH_TOKEN, and don't have 'gh config get user' available.
