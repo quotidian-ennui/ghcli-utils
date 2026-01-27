@@ -2,14 +2,8 @@
 #
 set -eo pipefail
 
-GH_REST_API_VERSION="X-GitHub-Api-Version: 2022-11-28"
-GH_ACCEPT="Accept: application/vnd.github+json"
 export GH_PAGER="cat"
 POLL_INTERVAL_SECS=${GH_POLL_INTERVAL_SECS:-30}
-
-gh_api() {
-  gh api -H "$GH_REST_API_VERSION" -H "$GH_ACCEPT" "$@"
-}
 
 usage() {
   cat <<EOF
@@ -59,17 +53,17 @@ __check_status() {
   buildStatusJson=$(gh pr checks "$pr_number" --json "name,state" | jq -c '.[]')
   if [[ -n "$buildStatusJson" ]]; then
     while IFS= read -r line; do
-      ((lineCount++))
-      status="$(echo "$line" | jq -r '.state')"
+      lineCount=$((lineCount + 1))
+			status="$(echo "$line" | jq -r '.state')"
       case "$status" in
       IN_PROGRESS | PENDING)
-        ((inProgressCount++))
+        inProgressCount=$((inProgressCount + 1))
         ;;
       SUCCESS)
-        ((successCount++))
+        successCount=$((successCount + 1))
         ;;
       *)
-        ((failureCount++))
+        failureCount=$((failureCount + 1))
         ;;
       esac
     done <<<"$buildStatusJson"
@@ -109,11 +103,6 @@ __approve_then_merge() {
   gh squash-merge "$pr_number" $(__bot_squash_merge_param "$pr_number")
 }
 
-__do_rebase() {
-  local pr_number="$1"
-  gh pr update-branch "$pr_number" --rebase
-}
-
 __rebase() {
   local pr_number="$1"
   while ! gh pr update-branch "$pr_number" --rebase; do
@@ -125,7 +114,6 @@ __rebase() {
 {
   if [[ "$#" -eq 0 ]]; then
     usage
-    exit 1
   fi
   for pr in "$@"; do
     echo "ℹ️ Working on $(gh pr view "$pr" --json "url" | jq -r '.url')"

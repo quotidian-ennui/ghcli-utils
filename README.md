@@ -4,7 +4,7 @@ Decidedly unclever scripts that aren't gh-extensions
 
 These are just some scripts that I use (rarely) that aren't clever enough or 'high use' enough to be actual github cli extensions. I treat it as a bit of a scratch pad to toy around with the github cli.
 
-> Unlike git, github cli doesn't just magically look for anything that has a `gh` prefix and treat it as an extension. So, stick this repo in your path and execute them the old fashioned way or make an gh alias for it
+> Unlike git, github cli doesn't just magically look for anything that has a `gh` prefix and treat it as an extension. So, stick this repo in your path and execute them the old fashioned way or make a gh alias for it
 >
 > - `gh alias set --shell merge-train 'gh-merge-train $@'`, then it's a case of `gh merge-train 1 2 3 4 5` as you like.
 
