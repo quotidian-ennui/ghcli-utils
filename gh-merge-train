@@ -135,7 +135,7 @@ __update_branch() {
 	  update_args+=("--rebase")
 	fi
 
-	echo "ℹ️ Update branching using gh pr update-branch $pr_number ${update_args[@]}"
+	echo "ℹ️ Update branch using gh pr update-branch $pr_number ${update_args[@]}"
   while ! gh pr update-branch "$pr_number" "${update_args[@]}"; do
 		updateCount=$((updateCount + 1))
     if [[ "$updateCount" -ge "$GH_MERGE_TRAIN_MAX_ATTEMPTS" ]]; then
