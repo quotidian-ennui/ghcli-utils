@@ -7,7 +7,12 @@ gh_api() {
   gh api -H "$GH_REST_API_VERSION" -H "$GH_ACCEPT" "$@"
 }
 
-internal::compressQuery() {
+compressQuery() {
   echo "$1" | tr -s ' ' | tr -d '\n'
 }
 
+# Because I often just use GH_TOKEN, and don't have 'gh config get user' available.
+# This is _weak_ but it will work for my purposes.
+gh_whoami() {
+	gh auth status -h github.com | grep "Logged in" | sed -e "s/^[[:blank:]]*//" -e "s/[[:blank:]]*$//" | cut -f7 -d ' '
+}

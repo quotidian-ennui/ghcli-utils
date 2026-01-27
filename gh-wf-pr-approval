@@ -27,7 +27,7 @@ while getopts 'h' flag; do
   esac
 done
 
-me=$(gh config get user -h github.com)
+me=$(gh_whoami)
 repos=$(gh repo list "$me" --visibility public --no-archived --json "nameWithOwner" -q ".[].nameWithOwner")
 for repo in $repos; do
   echo "Setting $repo"

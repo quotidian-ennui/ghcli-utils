@@ -31,7 +31,7 @@ pr_search() {
             }
           }
         }'
-  gh api graphql --paginate -F searchQuery="$queryString" --raw-field query="$(internal::compressQuery "$query")"
+  gh api graphql --paginate -F searchQuery="$queryString" --raw-field query="$(compressQuery "$query")"
 }
 
 usage() {
@@ -52,7 +52,7 @@ if [[ -z "$REPO" ]]; then
   usage
 fi
 
-me=$(gh config get user -h github.com)
+me=$(gh_whoami)
 pr_list=$(pr_search "$REPO" | jq -r -c '.data.search.edges | .[] | select(.node.author.login == "dependabot") | { "pr" : .node.number, "url" : .node.url }')
 for json in $pr_list; do
   pr=$(echo "$json" | jq -r .pr)
