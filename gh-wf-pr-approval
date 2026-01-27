@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-GH_REST_API_VERSION="X-GitHub-Api-Version: 2022-11-28"
-GH_ACCEPT="Accept: application/vnd.github+json"
 export GH_PAGER="cat"
+
+BASEDIR=$(dirname "$0")
+#shellcheck disable=SC1091
+source "$BASEDIR/ghcli-common.sh"
 
 usage() {
   cat <<EOF
@@ -13,14 +15,10 @@ Usage: gh-wf-pr-approval
 Sets the defaults such that github actions may approve & create PRs
 on all your public repos.
 
-
 EOF
   exit 1
 }
 
-function gh_api() {
-  gh api -H "$GH_REST_API_VERSION" -H "$GH_ACCEPT" "$@"
-}
 
 while getopts 'h' flag; do
   case "${flag}" in

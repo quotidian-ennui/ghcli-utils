@@ -3,7 +3,13 @@
 set -eo pipefail
 
 export GH_PAGER="cat"
+
+BASEDIR=$(dirname "$0")
+#shellcheck disable=SC1091
+source "$BASEDIR/ghcli-common.sh"
 POLL_INTERVAL_SECS=${GH_POLL_INTERVAL_SECS:-30}
+GH_MERGE_TRAIN_REBASE=${GH_MERGE_TRAIN_REBASE:-"--rebase"}
+GH_MERGE_TRAIN_MAX_ATTEMPTS=${GH_MERGE_TRAIN_MAX_ATTEMPTS:-5}
 
 usage() {
   cat <<EOF
@@ -103,11 +109,19 @@ __approve_then_merge() {
   gh squash-merge "$pr_number" $(__bot_squash_merge_param "$pr_number")
 }
 
-__rebase() {
+__update_branch() {
   local pr_number="$1"
-  while ! gh pr update-branch "$pr_number" --rebase; do
-    echo "Rebase failed. Retrying in $POLL_INTERVAL_SECS seconds..."
-    sleep "$POLL_INTERVAL_SECS"
+	local updateCount=0
+	echo "ℹ️ Update branching using gh pr update-branch $pr_number $GH_MERGE_TRAIN_REBASE"
+  while ! gh pr update-branch "$pr_number" "$GH_MERGE_TRAIN_REBASE"; do
+		updateCount=$((updateCount + 1))
+    if [[ "$updateCount" -ge "$GH_MERGE_TRAIN_MAX_ATTEMPTS" ]]; then
+      echo -e "\n🚫 Branch update failed too many times"
+      exit 1
+		else
+			echo "Rebase failed. Retrying in $POLL_INTERVAL_SECS seconds..."
+			sleep "$POLL_INTERVAL_SECS"
+    fi
   done
 }
 
@@ -117,7 +131,7 @@ __rebase() {
   fi
   for pr in "$@"; do
     echo "ℹ️ Working on $(gh pr view "$pr" --json "url" | jq -r '.url')"
-    __rebase "$pr"
+    __update_branch "$pr"
     # sad but sometimes the checks don't start quick enough
     sleep "$POLL_INTERVAL_SECS"
     __wait_for_checks "$pr"
