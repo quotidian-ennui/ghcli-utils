@@ -142,7 +142,7 @@ __update_branch() {
       echo -e "\n🚫 Branch update failed too many times"
       exit 1
 		else
-			echo "Rebase failed. Retrying in $POLL_INTERVAL_SECS seconds..."
+			echo "Update failed. Retrying in $POLL_INTERVAL_SECS seconds..."
 			sleep "$POLL_INTERVAL_SECS"
     fi
   done
