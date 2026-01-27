@@ -101,11 +101,24 @@ __wait_for_checks() {
   fi
 }
 
+__approve_if_not_author() {
+  local pr_number="$1"
+	local pr_author=""
+	local me=""
+
+	me=$(gh_whoami)
+	pr_author="$(gh pr view "$pr" --json "author" | jq -r '.author.login')"
+	echo "ℹ️ PR Authored by $pr_author"
+	if [[ "$me" != "$pr_author" ]]; then
+		if ! gh pr review --approve "$pr_number" ; then
+			echo "⚠️ Failed to approve, this might not matter. If it does then gh squash-merge should break..."
+		fi
+	fi
+}
+
 __approve_then_merge() {
   local pr_number="$1"
-  if ! gh pr review --approve "$pr_number" ; then
-    echo "⚠️ Failed to approve, this might not matter. If it does then gh squash-merge should break..."
-  fi
+	__approve_if_not_author "$pr_number"
   gh squash-merge "$pr_number" $(__bot_squash_merge_param "$pr_number")
 }
 
