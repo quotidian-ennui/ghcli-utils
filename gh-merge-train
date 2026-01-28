@@ -4,13 +4,14 @@ set -eo pipefail
 
 export GH_PAGER="cat"
 
-BASEDIR=$(dirname $(realpath "$0"))
+BASEDIR=$(dirname "$(realpath "$0")")
 #shellcheck disable=SC1091
 source "$BASEDIR/ghcli-common.sh"
 POLL_INTERVAL_SECS=${GH_POLL_INTERVAL_SECS:-30}
 GH_MERGE_TRAIN_REBASE="true"
 GH_MERGE_TRAIN_MAX_ATTEMPTS=${GH_MERGE_TRAIN_MAX_ATTEMPTS:-5}
 
+#shellcheck disable=SC2154
 usage() {
   cat <<EOF
 
@@ -58,16 +59,16 @@ __check_status() {
   local lineCount=0
   local status
 
-  buildStatusJson=$(gh pr checks "$pr_number" --json "name,state" | jq -c '.[]')
+  buildStatusJson=$(gh pr checks "$pr_number" --json "name,bucket" | jq -c '.[]')
   if [[ -n "$buildStatusJson" ]]; then
     while IFS= read -r line; do
       lineCount=$((lineCount + 1))
-      status="$(echo "$line" | jq -r '.state')"
+      status="$(echo "$line" | jq -r '.bucket')"
       case "$status" in
-      IN_PROGRESS | PENDING)
+      IN_PROGRESS | PENDING | pending)
         inProgressCount=$((inProgressCount + 1))
         ;;
-      SUCCESS)
+      SUCCESS | pass)
         successCount=$((successCount + 1))
         ;;
       *)
@@ -98,7 +99,7 @@ __wait_for_checks() {
     fi
   done
   if [[ "$buildStatus" != "SUCCESSFUL" ]]; then
-    echo "$pr_number builds: $buildStatus"
+    gh pr checks "$pr_number"
     exit 1
   fi
 }
@@ -123,7 +124,7 @@ __approve_if_not_author() {
 __approve_then_merge() {
   local pr_number="$1"
   __approve_if_not_author "$pr_number"
-  gh squash-merge "$pr_number" $(__bot_squash_merge_param "$pr_number")
+  gh squash-merge "$pr_number" "$(__bot_squash_merge_param "$pr_number")"
 }
 
 __update_branch() {
@@ -135,6 +136,7 @@ __update_branch() {
     update_args+=("--rebase")
   fi
 
+  #shellcheck disable=SC2145
   echo "ℹ️ Update branch using gh pr update-branch $pr_number ${update_args[@]}"
   while ! gh pr update-branch "$pr_number" "${update_args[@]}"; do
     updateCount=$((updateCount + 1))

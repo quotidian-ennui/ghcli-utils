@@ -3,7 +3,7 @@ set -eo pipefail
 
 export GH_PAGER="cat"
 
-BASEDIR=$(dirname $(realpath "$0"))
+BASEDIR=$(dirname "$(realpath "$0")")
 #shellcheck disable=SC1091
 source "$BASEDIR/ghcli-common.sh"
 
