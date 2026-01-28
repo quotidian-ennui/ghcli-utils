@@ -51,57 +51,10 @@ __bot_squash_merge_param() {
   fi
 }
 
-__check_status() {
-  local pr_number=$1
-  local successCount=0
-  local inProgressCount=0
-  local failureCount=0
-  local lineCount=0
-  local status
-
-  buildStatusJson=$(gh pr checks "$pr_number" --json "name,bucket" | jq -c '.[]')
-  if [[ -n "$buildStatusJson" ]]; then
-    while IFS= read -r line; do
-      lineCount=$((lineCount + 1))
-      status="$(echo "$line" | jq -r '.bucket')"
-      case "$status" in
-      IN_PROGRESS | PENDING | pending)
-        inProgressCount=$((inProgressCount + 1))
-        ;;
-      SUCCESS | pass)
-        successCount=$((successCount + 1))
-        ;;
-      *)
-        failureCount=$((failureCount + 1))
-        ;;
-      esac
-    done <<<"$buildStatusJson"
-    if [[ "$successCount" == "$lineCount" ]]; then
-      echo "SUCCESSFUL"
-    elif [[ $failureCount -gt 0 ]]; then
-      echo "FAILED"
-    else
-      echo "IN_PROGRESS"
-    fi
-  else
-    echo "No Checks in progress?"
-  fi
-}
-
 __wait_for_checks() {
   local pr_number="$1"
-  local buildStatus="IN_PROGRESS"
-  while [[ "$buildStatus" == "IN_PROGRESS" ]]; do
-    buildStatus="$(__check_status "$pr_number")"
-    if [[ "$buildStatus" == "IN_PROGRESS" ]]; then
-      echo "🔎 ...$pr_number still has checks; waiting for ${POLL_INTERVAL_SECS}s"
-      sleep "$POLL_INTERVAL_SECS"
-    fi
-  done
-  if [[ "$buildStatus" != "SUCCESSFUL" ]]; then
-    gh pr checks "$pr_number"
-    exit 1
-  fi
+  echo "🔎 ...waiting for checks to complete using gh pr checks"
+  gh pr checks "$pr_number" --watch --fail-fast --interval "$POLL_INTERVAL_SECS"
 }
 
 __approve_if_not_author() {
