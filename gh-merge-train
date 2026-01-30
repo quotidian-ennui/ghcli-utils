@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+#
+set -eo pipefail
+
+export GH_PAGER="cat"
+
+BASEDIR=$(dirname "$(realpath "$0")")
+#shellcheck disable=SC1091
+source "$BASEDIR/ghcli-common.sh"
+POLL_INTERVAL_SECS=${GH_POLL_INTERVAL_SECS:-30}
+GH_MERGE_TRAIN_REBASE="true"
+GH_MERGE_TRAIN_MAX_ATTEMPTS=${GH_MERGE_TRAIN_MAX_ATTEMPTS:-5}
+
+#shellcheck disable=SC2154
+usage() {
+  cat <<EOF
+
+Usage: gh-merge-train [flags] [pr_number...]
+
+This is a fake merge train that rebases, approves, and squash-merges each argument
+
+In effect it takes some toil out of your life because we end up with this:
+
+gh-merge-train 25 26 27
+for PR in 25 26 27 do
+  // retry if failure, so pay attention, because a conflict will mean an infinite loop
+  gh pr update-branch PR --rebase
+  while in_progress do
+    gh pr checks PR --json "state,name" | jq -c ".[]" etc.
+  done
+  if success then
+    gh pr review --approve $i
+    gh squash-merge $i --use-default-msg
+  fi
+done
+
+Flags
+  -m, --merge merge rather than rebase when updating the pr branch
+EOF
+  exit 1
+}
+
+__bot_squash_merge_param() {
+  local pr_number=$1
+  local is_bot="false"
+  is_bot=$(gh pr view "$pr_number" --json "author" --jq ".author.is_bot")
+  if [[ "$is_bot" == "true" ]]; then
+    echo "--use-default-msg"
+  else
+    echo ""
+  fi
+}
+
+__wait_for_checks() {
+  local pr_number="$1"
+  echo "🔎 ...waiting for checks to complete using gh pr checks"
+  gh pr checks "$pr_number" --watch --fail-fast --interval "$POLL_INTERVAL_SECS"
+}
+
+__approve_if_not_author() {
+  local pr_number="$1"
+  local pr_author=""
+  local me=""
+
+  me=$(gh_whoami)
+  pr_author="$(gh pr view "$pr" --json "author" | jq -r '.author.login')"
+  echo "ℹ️ PR Authored by $pr_author"
+  if [[ "$me" != "$pr_author" ]]; then
+    if ! gh pr review --approve "$pr_number"; then
+      echo "⚠️ Failed to approve, this might not matter. If it does then gh squash-merge should break..."
+    fi
+  else
+    echo "👀 Not going to try and approve your own PR!"
+  fi
+}
+
+__approve_then_merge() {
+  local pr_number="$1"
+  __approve_if_not_author "$pr_number"
+  gh squash-merge "$pr_number" "$(__bot_squash_merge_param "$pr_number")"
+}
+
+__update_branch() {
+  local pr_number="$1"
+  local updateCount=0
+  local update_args=()
+
+  if [[ "$GH_MERGE_TRAIN_REBASE" == "true" ]]; then
+    update_args+=("--rebase")
+  fi
+
+  #shellcheck disable=SC2145
+  echo "ℹ️ Update branch using gh pr update-branch $pr_number ${update_args[@]}"
+  while ! gh pr update-branch "$pr_number" "${update_args[@]}"; do
+    updateCount=$((updateCount + 1))
+    if [[ "$updateCount" -ge "$GH_MERGE_TRAIN_MAX_ATTEMPTS" ]]; then
+      echo -e "\n🚫 Branch update failed too many times"
+      exit 1
+    else
+      echo "Update failed. Retrying in $POLL_INTERVAL_SECS seconds..."
+      sleep "$POLL_INTERVAL_SECS"
+    fi
+  done
+}
+
+{
+  ARGS=$(getopt --options 'm' --longoptions 'merge' -- "${@}")
+  eval "set -- ${ARGS}"
+  while true; do
+    case "${1}" in
+    --merge | -m)
+      GH_MERGE_TRAIN_REBASE="false"
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      usage
+      ;;
+    esac
+  done
+  if [[ "$#" -eq 0 ]]; then
+    usage
+  fi
+
+  for pr in "$@"; do
+    echo "ℹ️ Working on $(gh pr view "$pr" --json "url" | jq -r '.url')"
+    __update_branch "$pr"
+    # sad but sometimes the checks don't start quick enough
+    sleep "$POLL_INTERVAL_SECS"
+    __wait_for_checks "$pr"
+    __approve_then_merge "$pr"
+  done
+}

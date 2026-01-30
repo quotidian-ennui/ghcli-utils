@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-function template_file() {
+template_file() {
   top=$(git rev-parse --show-toplevel)
   self="$(dirname "$0")/.github"
   pr_template=$(find "$top" -type f -iname "PULL_REQUEST_TEMPLATE.md" | head -n 1)

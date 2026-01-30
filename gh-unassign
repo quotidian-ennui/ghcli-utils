@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-GH_REST_API_VERSION="X-GitHub-Api-Version: 2022-11-28"
-GH_ACCEPT="Accept: application/vnd.github+json"
 export GH_PAGER="cat"
 
-function pr_search() {
+BASEDIR=$(dirname "$(realpath "$0")")
+#shellcheck disable=SC1091
+source "$BASEDIR/ghcli-common.sh"
+
+pr_search() {
   queryString="repo:$1 is:open is:pr review-requested:@me archived:false"
   # shellcheck disable=SC2016
   query='query ($searchQuery: String!, $endCursor: String) {
@@ -29,21 +31,11 @@ function pr_search() {
             }
           }
         }'
-  gh api graphql --paginate -F searchQuery="$queryString" --raw-field query="$(internal::compressQuery "$query")"
-}
-
-function gh_api() {
-  gh api -H "$GH_REST_API_VERSION" -H "$GH_ACCEPT" "$@"
-}
-
-# This is clearly a bout of premature optimisation and saving
-# a few newlines & spaces shouldn't be high on anyone's list
-function internal::compressQuery() {
-  echo "$1" | tr -d '\n'
+  gh api graphql --paginate -F searchQuery="$queryString" --raw-field query="$(compressQuery "$query")"
 }
 
 usage() {
-  cat << EOF
+  cat <<EOF
 
 Usage: gh-unassign <repo>
 
@@ -51,9 +43,8 @@ Removes you as a reviewer on all the PRs raised by dependabot
 in a given repo.
 
 EOF
- exit 1
+  exit 1
 }
-
 
 REPO=$1 || true
 
@@ -61,7 +52,7 @@ if [[ -z "$REPO" ]]; then
   usage
 fi
 
-me=$(gh config get user -h github.com)
+me=$(gh_whoami)
 pr_list=$(pr_search "$REPO" | jq -r -c '.data.search.edges | .[] | select(.node.author.login == "dependabot") | { "pr" : .node.number, "url" : .node.url }')
 for json in $pr_list; do
   pr=$(echo "$json" | jq -r .pr)
