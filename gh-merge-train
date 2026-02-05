@@ -10,6 +10,7 @@ source "$BASEDIR/ghcli-common.sh"
 POLL_INTERVAL_SECS=${GH_POLL_INTERVAL_SECS:-30}
 GH_MERGE_TRAIN_REBASE="true"
 GH_MERGE_TRAIN_MAX_ATTEMPTS=${GH_MERGE_TRAIN_MAX_ATTEMPTS:-5}
+GH_MERGE_TRAIN_BOT_LABEL=${GH_MERGE_TRAIN_BOT_LABEL:-}
 
 #shellcheck disable=SC2154
 usage() {
@@ -36,18 +37,41 @@ done
 
 Flags
   -m, --merge merge rather than rebase when updating the pr branch
+
+env:
+  GH_MERGE_TRAIN_MAX_ATTEMPTS: [$GH_MERGE_TRAIN_MAX_ATTEMPTS] : how many times to attempt an update
+  GH_MERGE_TRAIN_BOT_LABEL   : [$GH_MERGE_TRAIN_BOT_LABEL] : optional label to apply to a bot PR.
 EOF
   exit 1
 }
 
-__bot_squash_merge_param() {
+__is_bot() {
   local pr_number=$1
   local is_bot="false"
   is_bot=$(gh pr view "$pr_number" --json "author" --jq ".author.is_bot")
   if [[ "$is_bot" == "true" ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+__bot_squash_merge_param() {
+  local pr_number=$1
+  if __is_bot "$pr_number"; then
     echo "--use-default-msg"
   else
     echo ""
+  fi
+}
+
+__label_if_bot() {
+  local pr_number=$1
+  if __is_bot "$pr_number"; then
+    if [[ -n "$GH_MERGE_TRAIN_BOT_LABEL" ]]; then
+      echo "ℹ️ Applying label $GH_MERGE_TRAIN_BOT_LABEL"
+      gh pr edit "$pr_number" --add-label "$GH_MERGE_TRAIN_BOT_LABEL"
+    fi
   fi
 }
 
@@ -89,6 +113,7 @@ __update_branch() {
     update_args+=("--rebase")
   fi
 
+  __label_if_bot "$pr_number"
   #shellcheck disable=SC2145
   echo "ℹ️ Update branch using gh pr update-branch $pr_number ${update_args[@]}"
   while ! gh pr update-branch "$pr_number" "${update_args[@]}"; do
