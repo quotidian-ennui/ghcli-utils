@@ -14,7 +14,7 @@ GH_MERGE_TRAIN_BOT_LABEL=${GH_MERGE_TRAIN_BOT_LABEL:-}
 
 #shellcheck disable=SC2154
 usage() {
-  local exit=1
+  local exit=${1:-1}
   cat <<EOF
 
 Usage: gh-merge-train [flags] [pr_number...]
