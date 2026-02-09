@@ -204,8 +204,8 @@ __update_branch() {
   for pr in "$@"; do
     if [[ "$first" != "true" ]]; then
       sleep "$POLL_INTERVAL_SECS"
-      first="false"
     fi
+    first="false"
     url="$(__pr_view_field url "$pr")"
     if [[ $(__pr_view_field state "$pr") == "MERGED" ]]; then
       echo "ℹ️ Skipping $url already merged"
