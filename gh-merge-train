@@ -11,13 +11,16 @@ POLL_INTERVAL_SECS=${GH_POLL_INTERVAL_SECS:-30}
 GH_MERGE_TRAIN_REBASE="true"
 GH_MERGE_TRAIN_MAX_ATTEMPTS=${GH_MERGE_TRAIN_MAX_ATTEMPTS:-5}
 GH_MERGE_TRAIN_BOT_LABEL=${GH_MERGE_TRAIN_BOT_LABEL:-}
+GH_MERGE_TRAIN_DEPENDABOT_REBASE=${GH_MERGE_TRAIN_DEPENDABOT_REBASE:-}
 
 #shellcheck disable=SC2154
 usage() {
   local exit=${1:-1}
   cat <<EOF
 
-Usage: gh-merge-train [flags] [pr_number...]
+Usage: gh-merge-train [flags] [pr...]
+
+ℹ️ Use https://github.com/quotidian-ennui/gh-merge-train instead; this will be removed w/o warning.
 
 This is a fake merge train that rebases, approves, and squash-merges each argument
 
@@ -25,14 +28,13 @@ In effect it takes some toil out of your life because we end up with this:
 
 gh-merge-train 25 26 27
 for PR in 25 26 27 do
-  // retry if failure, so pay attention, because a conflict will mean an infinite loop
   gh pr update-branch PR --rebase
   while in_progress do
     gh pr checks PR --json "state,name" | jq -c ".[]" etc.
   done
   if success then
-    gh pr review --approve \$i
-    gh squash-merge \$i --use-default-msg
+    gh pr review --approve PR
+    gh squash-merge PR --use-default-msg
   fi
 done
 
@@ -42,7 +44,7 @@ Flags
 env:
   GH_MERGE_TRAIN_MAX_ATTEMPTS      : [$GH_MERGE_TRAIN_MAX_ATTEMPTS] : how many times to attempt an update
   GH_MERGE_TRAIN_BOT_LABEL         : [$GH_MERGE_TRAIN_BOT_LABEL] : optional label to apply to a bot PR.
-  GH_MERGE_TRAIN_DEPENDABOT_REBASE : [$GH_MERGE_TRAIN_DEPENDABOT_REBASE] : optional use dependabot chat-ops to rebase.
+  GH_MERGE_TRAIN_DEPENDABOT_REBASE : [$GH_MERGE_TRAIN_DEPENDABOT_REBASE] : optional use dependabot chat-ops to rebase if appropriate.
 EOF
   exit "$exit"
 }
@@ -111,7 +113,7 @@ __approve_if_not_author() {
   local me=""
 
   me=$(gh_whoami)
-  pr_author="$(gh pr view "$pr" --json "author" | jq -r '.author.login')"
+  pr_author="$(gh pr view "$pr_number" --json "author" | jq -r '.author.login')"
   echo "ℹ️ PR Authored by $pr_author"
   if [[ "$me" != "$pr_author" ]]; then
     if ! gh pr review --approve "$pr_number"; then
@@ -139,10 +141,10 @@ __update_branch() {
     if __is_dependabot "$pr_number"; then
       echo "ℹ️ Update branch using @dependabot rebase"
       if ! gh pr comment "$pr_number" --body "@dependabot rebase"; then
-        echo "  Failed to rebase via comment dependabot comment"
+        echo "⚠️ Failed to rebase via comment dependabot comment"
         exit 1
       fi
-      while [[ $(__merge_status "$pr") =~ ^BEHIND|DIRTY$ ]]; do
+      while [[ $(__merge_status "$pr_number") =~ ^(BEHIND|DIRTY)$ ]]; do
         updateCount=$((updateCount + 1))
         if [[ "$updateCount" -ge "$GH_MERGE_TRAIN_MAX_ATTEMPTS" ]]; then
           echo -e "\n🚫 Branch update failed too many times"
@@ -199,6 +201,7 @@ __update_branch() {
     usage
   fi
 
+  echo "ℹ️ Use https://github.com/quotidian-ennui/gh-merge-train as a ghcli extension instead"
   first="true"
 
   for pr in "$@"; do
@@ -212,7 +215,7 @@ __update_branch() {
       continue
     fi
     echo "ℹ️ Working on $url"
-    if [[ $(__merge_status "$pr") =~ ^BEHIND|DIRTY$ ]]; then
+    if [[ $(__merge_status "$pr") =~ ^(BEHIND|DIRTY)$ ]]; then
       __update_branch "$pr"
       # sad but sometimes the checks don't start quick enough
       sleep "$POLL_INTERVAL_SECS"
@@ -220,4 +223,7 @@ __update_branch() {
     __wait_for_checks "$pr"
     __approve_then_merge "$pr"
   done
+
+  echo "ℹ️ Use https://github.com/quotidian-ennui/gh-merge-train as a ghcli extension instead."
+
 }
