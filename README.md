@@ -17,15 +17,3 @@ Setting quotidian-ennui/gh-rate-limit
 bsh ❯
 ```
 
-## Bonus Chatter
-
-I use `gh-merge-train` quite a lot now, so much so, it might get promoted as an actual gh-extension. This is how I use it, of course the environment variable is set via `direnv` since the actual label depends on the project in question.
-
-```console
-gh alias set --shell merge-train 'gh-merge-train $@'
-export GH_MERGE_TRAIN_BOT_LABEL="dependency_reviewed"
-gh merge-train 1030 1031 1032
-```
-
-> I do wish I had an accurate way of waiting until the first check has started, I have had some situations where I've "merged" too early, before any checks have executed after rebasing.
-
