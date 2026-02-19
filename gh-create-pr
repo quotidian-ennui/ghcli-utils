@@ -1,12 +1,49 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-template_file() {
-  top=$(git rev-parse --show-toplevel)
-  self="$(dirname "$0")/.github"
-  pr_template=$(find "$top" -type f -iname "PULL_REQUEST_TEMPLATE.md" | head -n 1)
-  pr_template=${pr_template:-"$self/pull_request_template.md"}
-  echo "$pr_template"
+PR_TEMPLATE=$(mktemp --tmpdir gh-create-pr.XXXXXX)
+COMMIT_MSGS=$(mktemp --tmpdir gh-create-pr.XXXXXX)
+trap cleanup 1 2 15
+
+cleanup() {
+  if [[ -n "${PR_TEMPLATE:-}" ]]; then
+    rm -f "$PR_TEMPLATE"
+  fi
+  if [[ -n "${COMMIT_MSGS:-}" ]]; then
+    rm -f "$COMMIT_MSGS"
+  fi
 }
 
-gh pr create --body-file "$(template_file)" "$@"
+base_template() {
+  echo "$(dirname "$0")/.github/pull_request_template.md"
+}
+
+main_branch() {
+  git remote show "origin" | grep 'HEAD branch' | cut -d' ' -f5
+}
+
+commit_msgs() {
+  local main="$1"
+  git log --format=format:'- %s' "$main..$(git branch --show-current)" >"$COMMIT_MSGS"
+}
+
+create_pr_template() {
+  local main="$1"
+  awk -v msgs_file="$COMMIT_MSGS" '/@COMMIT_MSGS@/{while ((getline line < msgs_file) > 0) print line; close(msgs_file); next}1' "$(base_template)" >>"$PR_TEMPLATE"
+}
+
+{
+  main="$(main_branch)"
+  commit_msgs "$main"
+  create_pr_template "$main"
+  pr_title="$(tail -n 1 "$COMMIT_MSGS")"
+  pr_title="${pr_title/#- /}"
+
+  declare -a gh_args
+  gh_args+=("--body-file")
+  gh_args+=("$PR_TEMPLATE")
+  gh_args+=("--title")
+  gh_args+=("$pr_title")
+  gh pr create "${gh_args[@]}" "$@"
+  cleanup
+}
