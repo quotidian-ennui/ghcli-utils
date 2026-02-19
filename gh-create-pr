@@ -1,12 +1,39 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-template_file() {
-  top=$(git rev-parse --show-toplevel)
-  self="$(dirname "$0")/.github"
-  pr_template=$(find "$top" -type f -iname "PULL_REQUEST_TEMPLATE.md" | head -n 1)
-  pr_template=${pr_template:-"$self/pull_request_template.md"}
+base_template() {
+  pr_template="$(dirname "$0")/.github/pull_request_template.md"
   echo "$pr_template"
 }
 
-gh pr create --body-file "$(template_file)" "$@"
+main_branch() {
+  git remote show "origin" | grep 'HEAD branch' | cut -d' ' -f5
+}
+
+commit_msgs() {
+  local main="$1"
+  git log --format=format:'- %s' "$main..$(git branch --show-current)"
+}
+
+create_pr_template() {
+  local main="$1"
+  pr_template=$(mktemp --tmpdir gh-create-pr.XXXXXX)
+  msgs=$(commit_msgs "$main")
+  cat "$(base_template)" | sed -e "s/@COMMIT_MSGS@/$msgs/g" >>"$pr_template"
+  echo "$pr_template"
+}
+
+{
+  main="$(main_branch)"
+  pr_template=$(create_pr_template "$main")
+  pr_title="$(commit_msgs "$main" | head -n 1)"
+  pr_title="${pr_title/#- /}"
+
+  declare -a gh_args
+  gh_args+=("--body-file")
+  gh_args+=("$pr_template")
+  gh_args+=("--title")
+  gh_args+=("$pr_title")
+  gh pr create "${gh_args[@]}" "$@"
+  rm "$pr_template"
+}
