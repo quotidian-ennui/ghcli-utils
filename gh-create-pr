@@ -18,16 +18,18 @@ commit_msgs() {
 create_pr_template() {
   local main="$1"
   pr_template=$(mktemp --tmpdir gh-create-pr.XXXXXX)
-  trap 'rm -f "$pr_template"' EXIT
+  msgs_file=$(mktemp --tmpdir gh-create-pr.XXXXXX)
+  trap 'rm -f "$pr_template" "$msgs_file"' EXIT
   msgs=$(commit_msgs "$main")
-  sed -e "s/@COMMIT_MSGS@/$msgs/g" "$(base_template)" >>"$pr_template"
+  printf '%s\n' "$msgs" >"$msgs_file"
+  awk "/@COMMIT_MSGS@/{system(\"cat $msgs_file\");next}1" "$(base_template)" >>"$pr_template"
   echo "$pr_template"
 }
 
 {
   main="$(main_branch)"
   pr_template=$(create_pr_template "$main")
-  pr_title="$(commit_msgs "$main" | head -n 1)"
+  pr_title="$(commit_msgs "$main" | tail -n 1)"
   pr_title="${pr_title/#- /}"
 
   declare -a gh_args
