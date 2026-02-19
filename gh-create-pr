@@ -20,7 +20,7 @@ create_pr_template() {
   pr_template=$(mktemp --tmpdir gh-create-pr.XXXXXX)
   trap 'rm -f "$pr_template"' EXIT
   msgs=$(commit_msgs "$main")
-  cat "$(base_template)" | sed -e "s/@COMMIT_MSGS@/$msgs/g" >>"$pr_template"
+  sed -e "s/@COMMIT_MSGS@/$msgs/g" "$(base_template)" >>"$pr_template"
   echo "$pr_template"
 }
 
