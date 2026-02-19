@@ -18,6 +18,7 @@ commit_msgs() {
 create_pr_template() {
   local main="$1"
   pr_template=$(mktemp --tmpdir gh-create-pr.XXXXXX)
+  trap 'rm -f "$pr_template"' EXIT
   msgs=$(commit_msgs "$main")
   cat "$(base_template)" | sed -e "s/@COMMIT_MSGS@/$msgs/g" >>"$pr_template"
   echo "$pr_template"
@@ -35,5 +36,4 @@ create_pr_template() {
   gh_args+=("--title")
   gh_args+=("$pr_title")
   gh pr create "${gh_args[@]}" "$@"
-  rm "$pr_template"
 }
