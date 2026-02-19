@@ -1,9 +1,21 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
+PR_TEMPLATE=$(mktemp --tmpdir gh-create-pr.XXXXXX)
+COMMIT_MSGS=$(mktemp --tmpdir gh-create-pr.XXXXXX)
+trap cleanup 1 2 15
+
+cleanup() {
+  if [[ -n "${PR_TEMPLATE:-}" ]]; then
+    rm -f "$PR_TEMPLATE"
+  fi
+  if [[ -n "${COMMIT_MSGS:-}" ]]; then
+    rm -f "$COMMIT_MSGS"
+  fi
+}
+
 base_template() {
-  pr_template="$(dirname "$0")/.github/pull_request_template.md"
-  echo "$pr_template"
+  echo "$(dirname "$0")/.github/pull_request_template.md"
 }
 
 main_branch() {
@@ -12,30 +24,26 @@ main_branch() {
 
 commit_msgs() {
   local main="$1"
-  git log --format=format:'- %s' "$main..$(git branch --show-current)"
+  git log --format=format:'- %s' "$main..$(git branch --show-current)" >"$COMMIT_MSGS"
 }
 
 create_pr_template() {
   local main="$1"
-  pr_template=$(mktemp --tmpdir gh-create-pr.XXXXXX)
-  msgs_file=$(mktemp --tmpdir gh-create-pr.XXXXXX)
-  trap 'rm -f "$pr_template" "$msgs_file"' EXIT
-  msgs=$(commit_msgs "$main")
-  printf '%s\n' "$msgs" >"$msgs_file"
-  awk -v msgs_file="$msgs_file" '/@COMMIT_MSGS@/{while ((getline line < msgs_file) > 0) print line; close(msgs_file); next}1' "$(base_template)" >>"$pr_template"
-  echo "$pr_template"
+  awk -v msgs_file="$COMMIT_MSGS" '/@COMMIT_MSGS@/{while ((getline line < msgs_file) > 0) print line; close(msgs_file); next}1' "$(base_template)" >>"$PR_TEMPLATE"
 }
 
 {
   main="$(main_branch)"
-  pr_template=$(create_pr_template "$main")
-  pr_title="$(commit_msgs "$main" | tail -n 1)"
+  commit_msgs "$main"
+  create_pr_template "$main"
+  pr_title="$(tail -n 1 "$COMMIT_MSGS")"
   pr_title="${pr_title/#- /}"
 
   declare -a gh_args
   gh_args+=("--body-file")
-  gh_args+=("$pr_template")
+  gh_args+=("$PR_TEMPLATE")
   gh_args+=("--title")
   gh_args+=("$pr_title")
   gh pr create "${gh_args[@]}" "$@"
+  cleanup
 }
