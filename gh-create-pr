@@ -22,7 +22,7 @@ create_pr_template() {
   trap 'rm -f "$pr_template" "$msgs_file"' EXIT
   msgs=$(commit_msgs "$main")
   printf '%s\n' "$msgs" >"$msgs_file"
-  awk "/@COMMIT_MSGS@/{system(\"cat $msgs_file\");next}1" "$(base_template)" >>"$pr_template"
+  awk -v msgs_file="$msgs_file" '/@COMMIT_MSGS@/{while ((getline line < msgs_file) > 0) print line; close(msgs_file); next}1' "$(base_template)" >>"$pr_template"
   echo "$pr_template"
 }
 
