@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+export GH_PAGER="cat"
+PER_PAGE=100
+WORKFLOW_LIST_TABLE_TEMPLATE='{{tablerow "ID" "Name" "Path" "State" -}}
+{{ range . -}}
+{{tablerow (.id | autocolor "green") (.name | autocolor "cyan") (.path) (.state) -}}
+{{ end -}}
+{{tablerender}}'
+
+BASEDIR=$(dirname "$(realpath "$0")")
+#shellcheck disable=SC1091
+source "$BASEDIR/ghcli-common.sh"
+
+#shellcheck disable=SC2154
+usage() {
+  local exit=${1:-1}
+  cat <<EOF
+
+Usage: gh-workflow-run-purge [flags] [workflow-id]
+
+Deletes all the runs with the associated workflow-id
+
+By default will only show a list of workflows
+(using gh workflow list, but showing the path)
+
+Flags
+  -D, --delete do the delete
+EOF
+  exit "$exit"
+}
+
+action_list() {
+  gh workflow list --json "id,name,path,state" --template "$WORKFLOW_LIST_TABLE_TEMPLATE"
+}
+
+action_delete() {
+  local workflow_id="$1"
+  local run_list=""
+  local run_id=""
+  declare -i run_count=0
+  while true; do
+    echo "ℹ️ Fetching runs from $workflow_id"
+    run_list=$(gh_api "repos/:owner/:repo/actions/workflows/$workflow_id/runs?per_page=$PER_PAGE" | jq -r 'select (.workflow_runs | length >0) | .workflow_runs[] | .id')
+    if [[ -z "$run_list" ]]; then
+      echo "✅ No more runs to delete [$run_count] deleted"
+      break
+    fi
+    for run_id in $run_list; do
+      gh_api -X DELETE "repos/:owner/:repo/actions/runs/$run_id"
+      run_count+=1
+    done
+  done
+}
+
+{
+  action="list"
+  ARGS=$(getopt --options 'Dh' --longoptions 'delete,help' -- "${@}")
+  eval "set -- ${ARGS}"
+  while true; do
+    case "${1}" in
+    --delete | -D)
+      action="delete"
+      shift
+      ;;
+    -h | --help)
+      usage "0"
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      usage
+      ;;
+    esac
+  done
+  action_"$action" "$@"
+}
