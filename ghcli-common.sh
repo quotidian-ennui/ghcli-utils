@@ -21,3 +21,14 @@ gh_whoami() {
   fi
   echo "$me"
 }
+
+gh_is_repo() {
+  if ! gh repo view --json "name" >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+
+gh_repo_info() {
+  gh repo view --json "name,owner" | jq -r '"\(.owner.login)/\(.name)"'
+}

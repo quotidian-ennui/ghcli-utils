@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+#
+set -eo pipefail
+
+export GH_PAGER="cat"
+
+BASEDIR=$(dirname "$(realpath "$0")")
+#shellcheck disable=SC1091
+source "$BASEDIR/ghcli-common.sh"
+
+REASON_LIST="fix_started|inaccurate|no_bandwidth|not_used|tolerable_risk"
+VULNS_JSON_REST_JQ='
+  .[] |
+  {
+    "CVE": .security_advisory.cve_id,
+    "GHSA": .security_advisory.ghsa_id,
+    "alert_id": .number,
+    "package" : .dependency.package.name,
+    "severity": .security_advisory.severity
+  }
+'
+
+VULNS_DISMISS_JQ='"\(.number): \(.state)"'
+
+open_vulns_via_rest() {
+  gh_api "repos/:owner/:repo/dependabot/alerts?state=open" | jq -c "$VULNS_JSON_REST_JQ"
+}
+
+reason_is_valid() {
+  local reason="$1"
+  if [[ ! "${reason}" =~ ^($REASON_LIST)$ ]]; then
+    return 1
+  fi
+  return 0
+}
+
+dismiss_alert() {
+  local dismiss_entry="$1"
+  local open_vulns="$2"
+  local packages=()
+  local vuln_id=""
+  local comment=""
+  local reason=""
+  local gh_params=()
+  local cve_id=""
+  local ghsa_id=""
+  local affected_package=""
+  local alert_id=""
+
+  vuln_id=$(echo "$dismiss_entry" | jq -r ".key")
+  mapfile -t packages < <(echo "$dismiss_entry" | jq -r '.value.packages | .[]')
+  comment="$(echo "$dismiss_entry" | jq -r ".value.comment")"
+  reason="$(echo "$dismiss_entry" | jq -r ".value.reason")"
+  if ! reason_is_valid "$reason"; then
+    echo "$vuln_id does not contain a valid reason [$reason]"
+    exit 1
+  fi
+  echo "ℹ️ Dismissing $vuln_id"
+  while read -r vuln; do
+    cve_id="$(echo "$vuln" | jq -r ".CVE")"
+    ghsa_id="$(echo "$vuln" | jq -r ".GHSA")"
+    affected_package="$(echo "$vuln" | jq -r ".package")"
+    alert_id="$(echo "$vuln" | jq -r ".alert_id")"
+    # If the key matches either the CVE number or the GHSA ID then we check
+    # the packages to see if we should ignore.
+    if [[ "$vuln_id" == "$cve_id" || "$vuln_id" == "$ghsa_id" ]]; then
+      # it's an intentional substring search.
+      #shellcheck disable=SC2076
+      if [[ " ${packages[*]} " =~ " ${affected_package} " ]]; then
+        echo "🔍 Dismissing alert#$alert_id as $reason"
+        gh_params=()
+        gh_params+=("-f" "state=dismissed")
+        gh_params+=("-f" "dismissed_reason=$reason")
+        gh_params+=("-f" "dismissed_comment=$comment")
+        gh_api --method PATCH "/repos/:owner/:repo/dependabot/alerts/$alert_id" "${gh_params[@]}" | jq -r "$VULNS_DISMISS_JQ"
+      fi
+    fi
+  done <<<"$open_vulns"
+}
+
+dismiss_each_alert() {
+  local alert_file="$1"
+  local open_vulns="$2"
+
+  cat "$alert_file" | yq -p yaml -o json | jq -c "to_entries | .[]" | while read -r entry; do
+    dismiss_alert "$entry" "$open_vulns"
+  done
+}
+
+if ! gh_is_repo; then
+  echo "⚠️ Not in a repo, try switching to one"
+  exit 1
+fi
+
+GIT_ROOT="$(git rev-parse --show-toplevel)"
+IGNORE_FILE="$GIT_ROOT/.github/dismiss-alerts.yml"
+
+if [[ -f "$IGNORE_FILE" ]]; then
+  OPEN_VULNS="$(open_vulns_via_rest)"
+  if [[ -n "$OPEN_VULNS" ]]; then
+    dismiss_each_alert "$IGNORE_FILE" "$OPEN_VULNS"
+  else
+    echo "👌 No Open Alerts"
+  fi
+fi

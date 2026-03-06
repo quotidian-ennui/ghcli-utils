@@ -1,0 +1,24 @@
+"CVE-2024-6763":
+  packages:
+    - org.eclipse.jetty:jetty-http
+  # Can be one of: fix_started, inaccurate, no_bandwidth, not_used, tolerable_risk
+  reason: tolerable_risk
+  comment: >-
+    - Transitive from wiremock, @jetty 11, which can't be upgraded to jetty-12 because of GAV changes
+    - only used in tests
+"CVE-2025-66453":
+  packages:
+    - org.mozilla:rhino
+  reason: tolerable_risk
+  comment: only used when generating code from openapi spec locally
+"CVE-2026-1002":
+  packages:
+    - io.vertx:vertx-core
+  reason: tolerable_risk
+  comment: we are not vulnerable since we do not expose a StaticHandler externally.
+"GHSA-72hv-8253-57qq":
+  packages:
+    - "com.fasterxml.jackson.core:jackson-core"
+  reason: tolerable_risk
+  comment: >-
+    2.20.1 is pinned by quarkus 3.31.4 so will be upgraded when its upgraded
