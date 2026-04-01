@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+BASEDIR=$(dirname "$(realpath "$0")")
+#shellcheck disable=SC1091
+source "$BASEDIR/ghcli-common.sh"
+
+#shellcheck disable=SC2154
+usage() {
+  local exit=${1:-1}
+  cat <<EOF
+
+Usage: gh-cache-cleanup
+
+Cleans up the caches in the current repo whose last access was ~2 days ago
+
+EOF
+  exit "$exit"
+}
+
+show_old_caches() {
+  date=$(date +"%s" -d "2 days ago")
+  gh cache list --limit 100 -O asc --json "id,lastAccessedAt" --jq ".[] | select(.lastAccessedAt | sub(\".[0-9]+Z$\"; \"Z\") | fromdateiso8601 < $date) | .id"
+}
+
+mapfile -t old_caches < <(show_old_caches)
+while [[ ${#old_caches[@]} -gt 0 ]]; do
+  for cache in "${old_caches[@]}"; do
+    gh cache delete "$cache"
+  done
+  mapfile -t old_caches < <(show_old_caches)
+done
