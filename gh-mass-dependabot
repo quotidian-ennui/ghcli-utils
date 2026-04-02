@@ -19,6 +19,9 @@ Approves and (optionally) merges everything that matches a string and is by depe
 Flags
   -f, --filter - the search string (required)
   -m, --squash-merge - do a merge after approving
+  --dry-run - dry-run (don't approve, don't merge)
+  --merge-train - use gh merge-train instead
+  --org - use gh -gj instead of gh -aj
 EOF
   exit "$exit"
 }
@@ -26,7 +29,10 @@ EOF
 {
   searchString=""
   merge_pr="false"
-  ARGS=$(getopt --options 'f:hm' --longoptions 'filter:,help,squash-merge' -- "${@}")
+  dry_run="false"
+  merge_train="false"
+  ghmy_args="-aj"
+  ARGS=$(getopt --options 'f:hm' --longoptions 'filter:,help,squash-merge,dry-run,merge-train,org' -- "${@}")
   eval "set -- ${ARGS}"
   while true; do
     case "${1}" in
@@ -36,6 +42,18 @@ EOF
       ;;
     --squash-merge | -m)
       merge_pr="true"
+      shift
+      ;;
+    --dry-run)
+      dry_run="true"
+      shift
+      ;;
+    --merge-train)
+      merge_train="true"
+      shift
+      ;;
+    --org)
+      ghmy_args="-gj"
       shift
       ;;
     -h | --help)
@@ -61,12 +79,18 @@ EOF
     url=$(echo "$line" | jq -r '.url')
     if [[ "$status" == "SUCCESS" && "$isDraft" == "false" && "$login" == "dependabot" ]]; then
       if [[ "$title" == *"${searchString}"* ]]; then
-        echo "ℹ️ $url"
-        gh pr review --approve "$url"
-        if [[ "$merge_pr" == "true" ]]; then
-          gh squash-merge "$url" --use-default-msg
+        echo "ℹ️ $url [$title]"
+        if [[ "$dry_run" != "true" ]]; then
+          gh pr review --approve "$url"
+          if [[ "$merge_pr" == "true" ]]; then
+            if [[ "$merge_train" == "true" ]]; then
+              gh merge-train "$url"
+            else
+              gh squash-merge "$url" --use-default-msg
+            fi
+          fi
         fi
       fi
     fi
-  done <<<"$(gh my prs -aj)"
+  done <<<"$(gh my prs "$ghmy_args")"
 }
