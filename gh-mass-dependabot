@@ -29,6 +29,7 @@ EOF
 {
   searchString=""
   merge_pr="false"
+  squash_merge="false"
   dry_run="false"
   merge_train="false"
   ghmy_args="-aj"
@@ -42,6 +43,7 @@ EOF
       ;;
     --squash-merge | -m)
       merge_pr="true"
+      squash_merge="true"
       shift
       ;;
     --dry-run)
@@ -49,6 +51,7 @@ EOF
       shift
       ;;
     --merge-train)
+      merge_pr="true"
       merge_train="true"
       shift
       ;;
@@ -81,11 +84,12 @@ EOF
       if [[ "$title" == *"${searchString}"* ]]; then
         echo "ℹ️ $url [$title]"
         if [[ "$dry_run" != "true" ]]; then
-          gh pr review --approve "$url"
           if [[ "$merge_pr" == "true" ]]; then
             if [[ "$merge_train" == "true" ]]; then
               gh merge-train "$url"
-            else
+            fi
+            if [[ "$squash_merge" == "true" ]]; then
+              gh pr review --approve "$url"
               gh squash-merge "$url" --use-default-msg
             fi
           fi
