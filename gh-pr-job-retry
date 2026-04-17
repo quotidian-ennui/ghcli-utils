@@ -27,4 +27,23 @@ __retry_failed_jobs() {
   done
 }
 
-__retry_failed_jobs "$1"
+#shellcheck disable=SC2154
+usage() {
+  local exit=${1:-1}
+  cat <<EOF
+
+Usage: gh-pr-job-retry 'pr'
+
+Retries all the failed jobs for that PR.
+
+EOF
+  exit "$exit"
+}
+
+{
+  PR=$1 || true
+  if [[ -z "$PR" ]]; then
+    usage
+  fi
+  __retry_failed_jobs "$PR"
+}
