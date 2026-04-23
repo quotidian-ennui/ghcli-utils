@@ -15,7 +15,34 @@ cleanup() {
 }
 
 base_template() {
-  echo "$(dirname "$0")/.github/pull_request_template.md"
+  echo "${GH_CLI_PR_TEMPLATE:-$(dirname "$0")/.github/pull_request_template.md}"
+}
+
+usage() {
+  local exit=${1:-1}
+  cat <<EOF
+
+Usage: gh-create-pr [flags] [gh pr create flags]
+
+Creates a pull request using a template populated with commit messages
+from the current branch since the default branch.
+
+The PR title is taken from the last commit message on the branch.
+The PR body is generated from the template with @COMMIT_MSGS@ replaced
+by the commit messages since the default branch.
+
+Flags
+  -h, --help  Show this help message
+
+env:
+  GH_CLI_PR_TEMPLATE  Path to the PR template file
+                      (default: .github/pull_request_template.md
+                       relative to this script)
+
+Any additional flags after '--' are passed directly to 'gh pr create'.
+
+EOF
+  exit "$exit"
 }
 
 main_branch() {
@@ -33,6 +60,22 @@ create_pr_template() {
 }
 
 {
+  ARGS=$(getopt --options 'h' --longoptions 'help' -- "${@}")
+  eval "set -- ${ARGS}"
+  while true; do
+    case "${1}" in
+    -h | --help)
+      usage "0"
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      usage
+      ;;
+    esac
+  done
   main="$(main_branch)"
   commit_msgs "$main"
   create_pr_template "$main"
