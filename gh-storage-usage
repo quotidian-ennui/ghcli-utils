@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<EOF
+
+Usage: gh storage-usage <org>
+
+Check storage usage across organisation repositories
+
+EOF
+  exit 1
+}
+
+bytes_to_gb() {
+  echo "$1" | awk '{printf "%.4f GB\n", $1/1024/1024/1024}'
+}
+
+org=${1:-}
+
+if [[ -z "$org" ]]; then
+  usage
+fi
+
+echo "Checking repositories for organisation: $org"
+echo
+
+total_artifact_size=0
+total_cache_size=0
+
+mapfile -t repos < <(gh api --paginate "/orgs/$org/repos" --jq '.[] | .full_name')
+
+for repo in "${repos[@]}"; do
+  echo "Checking repository: $repo"
+  repo_artifact_size=0
+
+  mapfile -t sizes < <(gh api "/repos/$repo/actions/artifacts" --jq '.artifacts[].size_in_bytes')
+
+  for size in "${sizes[@]}"; do
+    repo_artifact_size=$((repo_artifact_size + size))
+  done
+
+  repo_cache_size=$(gh api "/repos/$repo/actions/cache/usage" --jq '.active_caches_size_in_bytes')
+
+  total_artifact_size=$((total_artifact_size + repo_artifact_size))
+  total_cache_size=$((total_cache_size + repo_cache_size))
+
+  repo_artifact_size_gb=$(bytes_to_gb "$repo_artifact_size")
+  repo_cache_size_gb=$(bytes_to_gb "$repo_cache_size")
+
+  echo "Total artifact size for : $repo_artifact_size_gb"
+  echo "Total cache size for    : $repo_cache_size_gb"
+  echo
+done
+
+total_artifact_size_gb=$(bytes_to_gb "$total_artifact_size")
+total_cache_size_gb=$(bytes_to_gb "$total_cache_size")
+
+echo "========================================"
+echo "Total artifact size for : $total_artifact_size_gb"
+echo "Total cache size for    : $total_cache_size_gb"
