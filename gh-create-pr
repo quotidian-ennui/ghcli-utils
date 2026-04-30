@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
+# shellcheck disable=SC1091
+source "$(dirname "$0")/ghcli-common.sh"
+
 PR_TEMPLATE=$(mktemp --tmpdir gh-create-pr.XXXXXX)
 COMMIT_MSGS=$(mktemp --tmpdir gh-create-pr.XXXXXX)
 trap cleanup 1 2 15
@@ -28,11 +31,13 @@ Creates a pull request using a template populated with commit messages
 from the current branch since the default branch.
 
 The PR title is taken from the last commit message on the branch.
-The PR body is generated from the template with @COMMIT_MSGS@ replaced
-by the commit messages since the default branch.
+The PR body is generated from the template with
+ - @COMMIT_MSGS@ replaced by the commit messages since the default branch.
+ - @BRANCH_ISSUE_REF@ replaced by the issue reference from the branch name.
 
 Flags
-  -h, --help  Show this help message
+  -h, --help      Show this help message
+  -n, --dry-run   Print the PR body to stdout instead of creating the PR
 
 env:
   GH_CLI_PR_TEMPLATE  Path to the PR template file
@@ -56,16 +61,26 @@ commit_msgs() {
 
 create_pr_template() {
   local main="$1"
-  awk -v msgs_file="$COMMIT_MSGS" '/@COMMIT_MSGS@/{while ((getline line < msgs_file) > 0) print line; close(msgs_file); next}1' "$(base_template)" >>"$PR_TEMPLATE"
+  local issue_ref
+  issue_ref="$(gh_branch_issue_ref)"
+  awk -v msgs_file="$COMMIT_MSGS" -v issue_ref="$issue_ref" '
+    /@COMMIT_MSGS@/{while ((getline line < msgs_file) > 0) print line; close(msgs_file); next}
+    /@BRANCH_ISSUE_REF@/{print issue_ref; next}
+    1' "$(base_template)" >>"$PR_TEMPLATE"
 }
 
 {
-  ARGS=$(getopt --options 'h' --longoptions 'help' -- "${@}")
+  dry_run=0
+  ARGS=$(getopt --options 'hn' --longoptions 'help,dry-run' -- "${@}")
   eval "set -- ${ARGS}"
   while true; do
     case "${1}" in
     -h | --help)
       usage "0"
+      ;;
+    -n | --dry-run)
+      dry_run=1
+      shift
       ;;
     --)
       shift
@@ -82,11 +97,16 @@ create_pr_template() {
   pr_title="$(tail -n 1 "$COMMIT_MSGS")"
   pr_title="${pr_title/#- /}"
 
-  declare -a gh_args
-  gh_args+=("--body-file")
-  gh_args+=("$PR_TEMPLATE")
-  gh_args+=("--title")
-  gh_args+=("$pr_title")
-  gh pr create "${gh_args[@]}" "$@"
+  if [[ "$dry_run" -eq 1 ]]; then
+    echo -e "$pr_title\n"
+    cat "$PR_TEMPLATE"
+  else
+    declare -a gh_args
+    gh_args+=("--body-file")
+    gh_args+=("$PR_TEMPLATE")
+    gh_args+=("--title")
+    gh_args+=("$pr_title")
+    gh pr create "${gh_args[@]}" "$@"
+  fi
   cleanup
 }

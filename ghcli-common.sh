@@ -32,3 +32,19 @@ gh_is_repo() {
 gh_repo_info() {
   gh repo view --json "name,owner" | jq -r '"\(.owner.login)/\(.name)"'
 }
+
+gh_branch_issue_ref() {
+  local branch
+  branch=$(git branch --show-current 2>/dev/null)
+  local pattern='^(.*)/(.*)/.*$'
+  local conventional_types='feat|fix|bug|refactor|chore|docs|style|test|perf|ci|build|revert'
+  if [[ "$branch" =~ $pattern ]]; then
+    local commit_type="${BASH_REMATCH[1]}"
+    local issue_ref="${BASH_REMATCH[2]}"
+    if [[ "$commit_type" =~ ^($conventional_types)$ ]]; then
+      echo "Ref: $issue_ref"
+      return
+    fi
+  fi
+  echo ""
+}
