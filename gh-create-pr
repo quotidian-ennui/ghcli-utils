@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-# shellcheck source=ghcli-common.sh
+# shellcheck disable=SC1091
 source "$(dirname "$0")/ghcli-common.sh"
 
 PR_TEMPLATE=$(mktemp --tmpdir gh-create-pr.XXXXXX)
@@ -31,8 +31,9 @@ Creates a pull request using a template populated with commit messages
 from the current branch since the default branch.
 
 The PR title is taken from the last commit message on the branch.
-The PR body is generated from the template with @COMMIT_MSGS@ replaced
-by the commit messages since the default branch.
+The PR body is generated from the template with
+ - @COMMIT_MSGS@ replaced by the commit messages since the default branch.
+ - @BRANCH_ISSUE_REF@ replaced by the issue reference from the branch name.
 
 Flags
   -h, --help      Show this help message

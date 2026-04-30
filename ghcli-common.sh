@@ -35,7 +35,7 @@ gh_repo_info() {
 
 gh_branch_issue_ref() {
   local branch
-  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+  branch=$(git branch --show-current 2>/dev/null)
   local pattern='^(.*)/(.*)/.*$'
   local conventional_types='feat|fix|bug|refactor|chore|docs|style|test|perf|ci|build|revert'
   if [[ "$branch" =~ $pattern ]]; then
