@@ -10,23 +10,52 @@ usage() {
   local exit=${1:-1}
   cat <<EOF
 
-Usage: gh-cache-cleanup
+Usage: gh-cache-cleanup [flags]
 
 Cleans up the caches in the current repo whose last access was ~2 days ago
+
+Flags:
+  -h, --help          Show this help message
+  -d, --date <date>   Date string for cutoff (default: '2 days ago')
 
 EOF
   exit "$exit"
 }
 
 show_old_caches() {
-  date=$(date +"%s" -d "2 days ago")
-  gh cache list --limit 100 -O asc --json "id,lastAccessedAt" --jq ".[] | select(.lastAccessedAt | sub(\".[0-9]+Z$\"; \"Z\") | fromdateiso8601 < $date) | .id"
+  local cutoff
+  cutoff=$(date +"%s" -d "$1")
+  gh cache list --limit 100 -O asc --json "id,lastAccessedAt" --jq ".[] | select(.lastAccessedAt | sub(\".[0-9]+Z$\"; \"Z\") | fromdateiso8601 < $cutoff) | .id"
 }
 
-mapfile -t old_caches < <(show_old_caches)
-while [[ ${#old_caches[@]} -gt 0 ]]; do
-  for cache in "${old_caches[@]}"; do
-    gh cache delete "$cache"
+{
+  date_str="2 days ago"
+  ARGS=$(getopt --options 'hd:' --longoptions 'help,date:' -- "${@}")
+  eval "set -- ${ARGS}"
+  while true; do
+    case "${1}" in
+    -h | --help)
+      usage "0"
+      ;;
+    -d | --date)
+      date_str="$2"
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      usage
+      ;;
+    esac
   done
-  mapfile -t old_caches < <(show_old_caches)
-done
+
+  mapfile -t old_caches < <(show_old_caches "$date_str")
+  while [[ ${#old_caches[@]} -gt 0 ]]; do
+    for cache in "${old_caches[@]}"; do
+      gh cache delete "$cache"
+    done
+    mapfile -t old_caches < <(show_old_caches "$date_str")
+  done
+}
