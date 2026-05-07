@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+#
+set -eo pipefail
+
+export GH_PAGER="cat"
+#shellcheck disable=SC2016
+FIND_PR_GRAPHQL_ID='
+query ($owner: String!, $repo: String!, $pr: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      id
+    }
+  }
+}
+'
+
+#shellcheck disable=SC2016
+GRAPHQL_COMMENT_IDS='
+query ($pr_id: ID!, $endCursor: String) {
+  node(id: $pr_id) {
+    ... on PullRequest {
+      reviewThreads(first: 100, after: $endCursor) {
+        nodes {
+          id
+          isResolved
+          isOutdated
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+}
+'
+#shellcheck disable=SC2016
+GRAPHQL_RESOLVE_COMMENT='
+mutation ($thread_id: ID!) {
+  resolveReviewThread(input: {threadId: $thread_id}) {
+    thread {
+      id
+    }
+  }
+}
+'
+
+BASEDIR=$(dirname "$(realpath "$0")")
+#shellcheck disable=SC1091
+source "$BASEDIR/ghcli-common.sh"
+
+#shellcheck disable=SC2154
+usage() {
+  local exit=${1:-1}
+  cat <<EOF
+
+Usage: gh-resolve 'pr'
+
+Resolves all the PR review threads associated with the PR
+
+EOF
+  exit "$exit"
+}
+
+__get_pr_node_id() {
+  local repo="$2"
+  local owner="$1"
+  local pr="$3"
+  gh api graphql --paginate -F owner="$owner" -F repo="$repo" -F pr="$pr" \
+    --raw-field query="$(compressQuery "$FIND_PR_GRAPHQL_ID")" | jq -r '.data.repository.pullRequest.id'
+}
+
+__get_pr_comment_ids() {
+  local pr_id=$1
+  gh api graphql --paginate -F pr_id="$pr_id" \
+    --raw-field query="$(compressQuery "$GRAPHQL_COMMENT_IDS")" | jq -r -c '.data.node.reviewThreads.nodes[]'
+
+}
+
+__resolve_pr_review_thread() {
+  local thread_id=$1
+  gh api graphql --paginate -F thread_id="$thread_id" --raw-field query="$(compressQuery "$GRAPHQL_RESOLVE_COMMENT")" >/dev/null 2>&1
+}
+
+{
+  PR=$1 || true
+  if [[ -z "$PR" ]]; then
+    usage
+  fi
+  repo=$(gh_repo_name)
+  owner=$(gh_repo_owner)
+
+  pr_node=$(__get_pr_node_id "$owner" "$repo" "$PR")
+  mapfile -t review_threads < <(__get_pr_comment_ids "$pr_node")
+  for comment in "${review_threads[@]}"; do
+    comment_id=$(echo "$comment" | jq -r ".id")
+    is_resolved=$(echo "$comment" | jq -r ".isResolved")
+    outdated=$(echo "$comment" | jq -r ".isOutdated")
+    if [[ "$is_resolved" != "true" && "$outdated" != "true" ]]; then
+      echo "🔎 Mark [$comment_id] as resolved"
+      __resolve_pr_review_thread "$comment_id"
+    fi
+  done
+}

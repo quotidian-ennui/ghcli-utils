@@ -29,8 +29,20 @@ gh_is_repo() {
   return 0
 }
 
+__gh_repo_info() {
+  gh repo view --json "name,owner"
+}
+
 gh_repo_info() {
-  gh repo view --json "name,owner" | jq -r '"\(.owner.login)/\(.name)"'
+  __gh_repo_info | jq -r '"\(.owner.login)/\(.name)"'
+}
+
+gh_repo_owner() {
+  __gh_repo_info | jq -r '.owner.login'
+}
+
+gh_repo_name() {
+  __gh_repo_info | jq -r '.name'
 }
 
 gh_branch_issue_ref() {
