@@ -41,10 +41,7 @@ Flags
 
 env:
   GH_CLI_PR_TEMPLATE  Path to the PR template file
-                      (default: .github/pull_request_template.md
-                       relative to this script)
-
-Any additional flags after '--' are passed directly to 'gh pr create'.
+                      (default: is $(dirname "$0")/.github/pull_request_template.md})
 
 EOF
   exit "$exit"
@@ -71,9 +68,8 @@ create_pr_template() {
 
 {
   dry_run=0
-  ARGS=$(getopt --options 'hn' --longoptions 'help,dry-run' -- "${@}")
-  eval "set -- ${ARGS}"
-  while true; do
+  passthrough_args=()
+  while [[ $# -gt 0 ]]; do
     case "${1}" in
     -h | --help)
       usage "0"
@@ -84,10 +80,12 @@ create_pr_template() {
       ;;
     --)
       shift
+      passthrough_args+=("$@")
       break
       ;;
     *)
-      usage
+      passthrough_args+=("${1}")
+      shift
       ;;
     esac
   done
@@ -106,7 +104,7 @@ create_pr_template() {
     gh_args+=("$PR_TEMPLATE")
     gh_args+=("--title")
     gh_args+=("$pr_title")
-    gh pr create "${gh_args[@]}" "$@"
+    gh pr create "${gh_args[@]}" "${passthrough_args[@]}"
   fi
   cleanup
 }
