@@ -226,27 +226,66 @@ __stack_checkout_stack() {
   gh stack push
 }
 
+__get_stack_num() {
+  local url="$1"
+  local stack_num
+  local url_re='^https?://github\.com/([^/]+)/([^/]+)/pull/([0-9]+)/?$'
+  local number_re='^[0-9]+$'
+  local name_with_owner
+  local local_repo
+  local pr_number
+
+  # If we are not in a repo, then we can never succeed since stack work
+  # requires us to do eventually do a gh stack rebase.
+  if gh_is_repo; then
+    local_repo="$(gh_repo_info)"
+    if [[ $url =~ $url_re ]]; then
+      name_with_owner="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+      pr_number="${BASH_REMATCH[3]}"
+    elif [[ $url =~ $number_re ]]; then
+      pr_number="$url"
+      name_with_owner="$local_repo"
+    fi
+    # If we are in the same repo, then we could be in a stack.
+    if [[ "$name_with_owner" == "$local_repo" ]]; then
+      stack_num="$(gh_api "/repos/$name_with_owner/pulls/$pr_number" | jq -r 'select(.stack != null) | .stack.number')"
+    fi
+    if [[ -n "$stack_num" ]]; then
+      echo "$stack_num"
+    else
+      echo ""
+    fi
+  else
+    echo ""
+  fi
+}
+
 __stack_merge() {
   local first="true"
-
+  local stack_num=""
   for stack in "$@"; do
     if [[ "$first" != "true" ]]; then
       __sleep "💤..."
     fi
     first="false"
-    __stack_checkout_stack "$stack"
-    mapfile -t prs_in_stack < <(__create_pr_list_from_stack "$stack")
-    for pr in "${prs_in_stack[@]}"; do
-      url="$(__pr_view_field url "$pr")"
-      if [[ $(__pr_view_field state "$pr") == "MERGED" ]]; then
-        echo "ℹ️ Skipping $url already merged"
-        continue
-      fi
-      echo "ℹ️ Working on $url"
-      __label_if_bot "$pr"
-      __wait_for_checks "$pr"
-      __approve_then_merge "$pr" "true"
-    done
+    stack_num=$(__get_stack_num "$stack")
+    if [[ -n "$stack_num" ]]; then
+      __stack_checkout_stack "$stack_num"
+      mapfile -t prs_in_stack < <(__create_pr_list_from_stack "$stack_num")
+      for pr in "${prs_in_stack[@]}"; do
+        url="$(__pr_view_field url "$pr")"
+        if [[ $(__pr_view_field state "$pr") == "MERGED" ]]; then
+          echo "ℹ️ Skipping $url already merged"
+          continue
+        fi
+        echo "ℹ️ Working on $url"
+        __label_if_bot "$pr"
+        __wait_for_checks "$pr"
+        __approve_then_merge "$pr" "true"
+      done
+    else
+      echo "⚠️ Not part of stack | Not Local Repo: $stack"
+    fi
   done
 }
 
@@ -267,9 +306,5 @@ __stack_merge() {
       ;;
     esac
   done
-  if gh_is_repo; then
-    __stack_merge "$@"
-  else
-    echo "Not a repo..."
-  fi
+  __stack_merge "$@"
 }
