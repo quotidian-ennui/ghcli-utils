@@ -28,7 +28,7 @@ __list_prs_from_stack() {
 }
 
 __stack_list() {
-  mapfile -t stacks < <(gh_api "/repos/:owner/:repo/stacks" | jq -r '.[] | .number')
+  mapfile -t stacks < <(gh_api "/repos/:owner/:repo/stacks" | jq -r '.[] | select(.open == true) | .number')
   for stack in "${stacks[@]}"; do
     echo -e "\nℹ️ STACK $stack"
     __list_prs_from_stack "$stack"
