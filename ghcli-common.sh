@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-GH_REST_API_VERSION="X-GitHub-Api-Version: 2022-11-28"
+GH_REST_API_VERSION="X-GitHub-Api-Version: 2026-03-10"
 GH_ACCEPT="Accept: application/vnd.github+json"
 
 gh_api() {
