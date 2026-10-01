@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+#
+set -eo pipefail
+
+export GH_PAGER="cat"
+
+BASEDIR=$(dirname "$(realpath "$0")")
+#shellcheck disable=SC1091
+source "$BASEDIR/ghcli-common.sh"
+
+#shellcheck disable=SC2154
+usage() {
+  local exit=${1:-1}
+  cat <<EOF
+
+Usage: gh-stack-list
+
+List the stacks in this repo
+EOF
+  exit "$exit"
+}
+
+__list_prs_from_stack() {
+  local stack_number="$1"
+  gh_api "/repos/:owner/:repo/stacks/$stack_number" |
+    jq -r '.pull_requests | .[] | "\(.number)|\(.state)|\(.title)|\(.url)"' |
+    column -s'|' -t -N "NUMBER,STATE,TITLE,URL"
+}
+
+__stack_list() {
+  mapfile -t stacks < <(gh_api "/repos/:owner/:repo/stacks" | jq -r '.[] | .number')
+  for stack in "${stacks[@]}"; do
+    echo -e "\nℹ️ STACK $stack"
+    __list_prs_from_stack "$stack"
+  done
+}
+
+{
+  ARGS=$(getopt --options 'h' --longoptions 'help' -- "${@}")
+  eval set -- "$ARGS"
+  while true; do
+    case "${1}" in
+    -h | --help)
+      usage "0"
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      usage
+      ;;
+    esac
+  done
+  if gh_is_repo; then
+    __stack_list "$@"
+  else
+    echo "Not a repo..."
+  fi
+}

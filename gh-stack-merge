@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+#
+set -eo pipefail
+
+export GH_PAGER="cat"
+
+BASEDIR=$(dirname "$(realpath "$0")")
+#shellcheck disable=SC1091
+source "$BASEDIR/ghcli-common.sh"
+POLL_INTERVAL_SECS=${GH_POLL_INTERVAL_SECS:-30}
+GH_MERGE_TRAIN_BOT_LABEL=${GH_MERGE_TRAIN_BOT_LABEL:-}
+GH_MERGE_TRAIN_MAX_ATTEMPTS="${GH_MERGE_TRAIN_MAX_ATTEMPTS:-9}"
+
+#shellcheck disable=SC2154
+usage() {
+  local exit=${1:-1}
+  cat <<EOF
+
+Usage: gh-stack-merge [flags] [stack...]
+
+This is a fake merge train that uses 'gh stack' style operations.
+
+Since 'gh stack merge' doesn't currently allow you to rewrite the commit message then
+this alternative uses 'gh-squash-merge --async' to do the actual commit.
+
+Currently it must be run from the repository in question, and use the stack number
+
+gh-stack-merge 25 26 27
+for STACK in 25 26 27 do
+	gh stack checkout 25
+	gh stack bottom
+	gh stack rebase
+	gh stack push
+  for each PR in stack do
+    gh squash-merge --async PR
+  done
+done
+
+Flags
+  -i, --inputfile file containing a newline separated list of PR url/numbers to process
+
+env:
+  GH_POLL_INTERVAL_SECS             : interval between re-attempts              : [$POLL_INTERVAL_SECS]
+  GH_MERGE_TRAIN_BOT_LABEL          : optional label to apply to a bot PR.      : [$GH_MERGE_TRAIN_BOT_LABEL]
+EOF
+  exit "$exit"
+}
+
+__sleep() {
+  local msg="$1"
+  echo -e "$msg"
+  sleep "$POLL_INTERVAL_SECS"
+}
+
+__is_bot() {
+  local pr_number=$1
+  local is_bot="false"
+  is_bot=$(gh pr view "$pr_number" --json "author" --jq ".author.is_bot")
+  if [[ "$is_bot" == "true" ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+__is_dependabot() {
+  local pr_number=$1
+  local is_dependabot=""
+  is_dependabot=$(gh pr view "$pr_number" --json "author" --jq ".author.login")
+  if [[ "$is_dependabot" == "app/dependabot" ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+__pr_view_field() {
+  local field="$1"
+  local pr_number="$2"
+  gh pr view "$pr_number" --json "$field" --jq ".$field"
+}
+
+__merge_status() {
+  local pr_number=$1
+  __pr_view_field mergeStateStatus "$pr_number"
+}
+
+__extract_squash_merge_message() {
+  local pr_number=$1
+  local body=""
+  local message=""
+
+  body=$(gh pr view "$pr_number" --json "body" --jq ".body")
+
+  # Check if both markers exist before extraction
+  if echo "$body" | grep -q "SQUASH_MERGE_START" && echo "$body" | grep -q "SQUASH_MERGE_END"; then
+    # Extract content between markers, excluding the exact marker lines (HTML comments)
+    message=$(echo "$body" | awk '/SQUASH_MERGE_START/,/SQUASH_MERGE_END/' | grep -Ev "<!--[[:space:]]*SQUASH_MERGE_(START|END)[[:space:]]*-->")
+  fi
+
+  echo "$message"
+}
+
+__bot_squash_merge_param() {
+  local pr_number=$1
+  if __is_bot "$pr_number"; then
+    local squash_message=""
+    local trimmed=""
+    squash_message=$(__extract_squash_merge_message "$pr_number")
+    trimmed=$(echo "$squash_message" | tr -d '[:space:]')
+
+    # If there's a viable squash-merge message (non-empty after trimming all whitespace), don't use default message
+    if [[ -n "$trimmed" ]]; then
+      echo ""
+    else
+      echo "--use-default-msg"
+    fi
+  else
+    echo ""
+  fi
+}
+
+__is_valid_label() {
+  local pr_number="$1"
+  local label_to_find="$2"
+  local found_label=""
+  local repo=""
+  local alt_repo_args=()
+
+  if [[ "$pr_number" =~ http* ]]; then
+    ## github URL, so strip it out.
+    repo="${pr_number##https://github.com/}"
+    repo="${repo%%/pull*}"
+    alt_repo_args+=("--repo")
+    alt_repo_args+=("$repo")
+  fi
+  found_label=$(gh label list "${alt_repo_args[@]}" --json "name" | jq -r --arg label "$label_to_find" -c '.[] | select (.name == $label) | .name')
+  if [[ "$found_label" == "$label_to_find" ]]; then
+    return 0
+  fi
+  echo "🏷️ label $label_to_find not found in repo for $pr_number"
+  return 1
+}
+
+__wait_if_skipped_jobs() {
+  local pr_number=$1
+  local skipped_jobs=0
+  skipped_jobs=$(gh pr checks "$pr_number" --json "name,state" | jq -r -c '.[] | select (.state == "SKIPPED") | .name' | wc -l)
+  if [[ "$skipped_jobs" -gt 0 ]]; then
+    __sleep "💤 ... Waiting for skipped jobs to potentially fire"
+  fi
+}
+
+__label_if_bot() {
+  local pr_number=$1
+  if [[ -n "$GH_MERGE_TRAIN_BOT_LABEL" ]]; then
+    if __is_valid_label "$pr_number" "$GH_MERGE_TRAIN_BOT_LABEL"; then
+      if __is_bot "$pr_number"; then
+        echo "ℹ️ Applying label $GH_MERGE_TRAIN_BOT_LABEL"
+        gh pr edit "$pr_number" --add-label "$GH_MERGE_TRAIN_BOT_LABEL"
+        # If there are skipped jobs, then labelling may start them, so give it a chance.
+        __wait_if_skipped_jobs "$pr_number"
+      fi
+    fi
+  fi
+}
+
+__wait_for_checks() {
+  local pr_number="$1"
+  echo "🔎 ... waiting for checks to complete using gh pr checks"
+  gh pr checks "$pr_number" --watch --fail-fast --interval "$POLL_INTERVAL_SECS"
+}
+
+__approve_if_not_author() {
+  local pr_number="$1"
+  local pr_author=""
+  local me=""
+
+  me=$(gh_whoami)
+  pr_author="$(gh pr view "$pr_number" --json "author" | jq -r '.author.login')"
+  echo "ℹ️ PR Authored by $pr_author"
+  if [[ "$me" != "$pr_author" ]]; then
+    if ! gh pr review --approve "$pr_number"; then
+      echo "⚠️ Failed to approve, this might not matter. If it does then gh squash-merge should break..."
+    fi
+  else
+    echo "👀 Not going to try and approve your own PR!"
+  fi
+}
+
+__approve_then_merge() {
+  local pr_number="$1"
+  local async_mode="${2:-false}"
+  local squash_merge_args=()
+
+  __approve_if_not_author "$pr_number"
+  squash_merge_args+=("$(__bot_squash_merge_param "$pr_number")")
+  if [[ "$async_mode" == "true" ]]; then
+    squash_merge_args+=("--async")
+  fi
+  gh squash-merge "$pr_number" "${squash_merge_args[@]}"
+}
+
+__create_pr_list_from_stack() {
+  local stack_number="$1"
+  gh_api "/repos/:owner/:repo/stacks/$stack_number" | jq -r '.pull_requests.[].number'
+}
+
+# Get the stack and navigate closest to trunk
+# gh stack checkout 1234 will checkout the stack if 1234 is just a PR number
+# So we could find out the stack associated with this PR by
+# gh_api /repos/:owner/:repo/pulls/2136 | jq '.select(.stack != null) | .stack.number'
+# And that becomes the stack number we work with.
+__stack_checkout_stack() {
+  local stack_number="$1"
+  local stack_up_msg=""
+
+  gh stack checkout "$stack_number"
+  gh stack bottom
+  # Can't rebase unless you have checked out each stack PR
+  # since it will try to use git under the covers.
+  while [[ "$stack_up_msg" != "Already at the top of the stack" ]]; do
+    stack_up_msg="$(gh stack up 2>&1)"
+  done
+  gh stack rebase
+  gh stack push
+}
+
+__stack_merge() {
+  local first="true"
+
+  for stack in "$@"; do
+    if [[ "$first" != "true" ]]; then
+      __sleep "💤..."
+    fi
+    first="false"
+    __stack_checkout_stack "$stack"
+    mapfile -t prs_in_stack < <(__create_pr_list_from_stack "$stack")
+    for pr in "${prs_in_stack[@]}"; do
+      url="$(__pr_view_field url "$pr")"
+      if [[ $(__pr_view_field state "$pr") == "MERGED" ]]; then
+        echo "ℹ️ Skipping $url already merged"
+        continue
+      fi
+      echo "ℹ️ Working on $url"
+      __label_if_bot "$pr"
+      __wait_for_checks "$pr"
+      __approve_then_merge "$pr" "true"
+    done
+  done
+}
+
+{
+  ARGS=$(getopt --options 'h' --longoptions 'help' -- "${@}")
+  eval set -- "$ARGS"
+  while true; do
+    case "${1}" in
+    -h | --help)
+      usage "0"
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      usage
+      ;;
+    esac
+  done
+  if gh_is_repo; then
+    __stack_merge "$@"
+  else
+    echo "Not a repo..."
+  fi
+}
