@@ -37,7 +37,7 @@ gh_branch_issue_ref() {
   local branch
   branch=$(git branch --show-current 2>/dev/null)
   local pattern='^(.*)/(.*)/.*$'
-  local conventional_types='feat|fix|bug|refactor|chore|docs|style|test|perf|ci|build|revert'
+  local conventional_types='feat|fix|bug|refactor|chore|docs|style|test|perf|ci|build|revert|release'
   if [[ "$branch" =~ $pattern ]]; then
     local commit_type="${BASH_REMATCH[1]}"
     local issue_ref="${BASH_REMATCH[2]}"
