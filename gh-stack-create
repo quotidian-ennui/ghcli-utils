@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+#
+set -eo pipefail
+
+export GH_PAGER="cat"
+
+BASEDIR=$(dirname "$(realpath "$0")")
+#shellcheck disable=SC1091
+source "$BASEDIR/ghcli-common.sh"
+
+#shellcheck disable=SC2154
+usage() {
+  local exit=${1:-1}
+  cat <<EOF
+
+Usage: gh-stack-create <PR> [...<PR>]
+
+Create a stack from pre-existing PRs.
+Arguably you'll never need to use this, but I used it to chain
+bot updates together to test 'gh-merge-train'
+
+EOF
+  exit "$exit"
+}
+
+__branch_for_pr() {
+  local pr="$1"
+  gh pr view --json headRefName "$pr" --jq ".headRefName"
+}
+
+__check_out_branch() {
+  local branch="$1"
+  if ! git branch -v | grep "$branch"; then
+    git checkout -b "$branch" "origin/$branch"
+  else
+    git pull origin "$branch"
+  fi
+}
+
+__create_stack() {
+  local stack_branch=()
+  local branch_name
+
+  git pull --all
+  for pr in "$@"; do
+    branch_name="$(__branch_for_pr "$pr")"
+    stack_branch+=("$branch_name")
+    __check_out_branch "$branch_name"
+  done
+  gh stack init "${stack_branch[@]}"
+}
+
+{
+  ARGS=$(getopt --options 'h' --longoptions 'help' -- "${@}")
+  eval set -- "$ARGS"
+  while true; do
+    case "${1}" in
+    -h | --help)
+      usage "0"
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      usage
+      ;;
+    esac
+  done
+  if gh_is_repo; then
+    __create_stack "$@"
+  else
+    echo "Not a repo..."
+  fi
+}
